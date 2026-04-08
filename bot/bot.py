@@ -171,7 +171,7 @@ async def check_ebay():
                 await channel.send(embed=embed)
         except Exception as e:
             print("Error:", e)
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)
 
 @client.event
 async def on_ready():
