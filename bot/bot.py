@@ -42,17 +42,27 @@ def get_ebay_token():
     return response.json()["access_token"]
 
 def get_ebay_listings(token):
-    response = requests.get(
-        "https://api.ebay.com/buy/browse/v1/item_summary/search",
-        headers={"Authorization": f"Bearer {token}"},
-        params={"q": "CGC 9.5", "limit": 5},
-        timeout=30
-    )
-    response.raise_for_status()
-    return response.json().get("itemSummaries", [])
+    queries = ["CGC 9.5", "CGC Blue Label"]
+    seen_ids = set()
+    all_items = []
+    for query in queries:
+        response = requests.get(
+            "https://api.ebay.com/buy/browse/v1/item_summary/search",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"q": query, "limit": 5},
+            timeout=30
+        )
+        response.raise_for_status()
+        for item in response.json().get("itemSummaries", []):
+            item_id = item.get("itemId")
+            if item_id and item_id not in seen_ids:
+                seen_ids.add(item_id)
+                all_items.append(item)
+    return all_items
 
-def is_cgc_95(item):
-    return "cgc 9.5" in item.get("title", "").lower()
+def is_target_item(item):
+    title = item.get("title", "").lower()
+    return "cgc 9.5" in title or "cgc blue label" in title
 
 async def check_ebay():
     await client.wait_until_ready()
@@ -67,7 +77,7 @@ async def check_ebay():
             items = get_ebay_listings(token)
             for item in items:
                 item_id = item.get("itemId")
-                if not item_id or item_id in seen_items or not is_cgc_95(item):
+                if not item_id or item_id in seen_items or not is_target_item(item):
                     continue
                 seen_items.add(item_id)
                 save_seen_items(seen_items)
