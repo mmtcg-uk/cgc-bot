@@ -3,6 +3,7 @@ import requests
 import asyncio
 import json
 import os
+import re
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 DISCORD_CHANNEL_ID = int(os.environ["DISCORD_CHANNEL_ID"])
@@ -15,20 +16,32 @@ SEEN_FILE = "seen_items.json"
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
+def normalize_title(title: str) -> str:
+    """Lowercase, strip punctuation/extra whitespace for fuzzy title comparison."""
+    title = title.lower()
+    title = re.sub(r"[^a-z0-9\s]", "", title)
+    title = re.sub(r"\s+", " ", title).strip()
+    return title
+
 def load_seen_items():
     if os.path.exists(SEEN_FILE):
         try:
             with open(SEEN_FILE, "r") as f:
-                return set(json.load(f))
+                data = json.load(f)
+                # Support both old format (list of IDs) and new format (dict with ids + titles)
+                if isinstance(data, dict):
+                    return set(data.get("ids", [])), set(data.get("titles", []))
+                else:
+                    return set(data), set()
         except:
-            return set()
-    return set()
+            return set(), set()
+    return set(), set()
 
-def save_seen_items(seen_items):
+def save_seen_items(seen_ids, seen_titles):
     with open(SEEN_FILE, "w") as f:
-        json.dump(list(seen_items), f)
+        json.dump({"ids": list(seen_ids), "titles": list(seen_titles)}, f)
 
-seen_items = load_seen_items()
+seen_ids, seen_titles = load_seen_items()
 
 def get_ebay_token():
     response = requests.post(
@@ -43,20 +56,20 @@ def get_ebay_token():
 
 def get_ebay_listings(token):
     queries = ["CGC 9.5", "CGC Blue Label"]
-    seen_ids = set()
+    batch_ids = set()  # deduplicate within this fetch batch only
     all_items = []
     for query in queries:
         response = requests.get(
             "https://api.ebay.com/buy/browse/v1/item_summary/search",
             headers={"Authorization": f"Bearer {token}"},
-            params={"q": query, "limit": 5},
+            params={"q": query, "limit": 20},
             timeout=30
         )
         response.raise_for_status()
         for item in response.json().get("itemSummaries", []):
             item_id = item.get("itemId")
-            if item_id and item_id not in seen_ids:
-                seen_ids.add(item_id)
+            if item_id and item_id not in batch_ids:
+                batch_ids.add(item_id)
                 all_items.append(item)
     return all_items
 
@@ -135,11 +148,19 @@ async def check_ebay():
             items = get_ebay_listings(token)
             for item in items:
                 item_id = item.get("itemId")
-                if not item_id or item_id in seen_items or not is_target_item(item):
+                if not item_id or not is_target_item(item):
                     continue
-                seen_items.add(item_id)
-                save_seen_items(seen_items)
+                # Primary dedup: by itemId
+                if item_id in seen_ids:
+                    continue
+                # Secondary dedup: by normalized title (catches same product with different IDs)
                 title = item.get("title", "No title")
+                norm_title = normalize_title(title)
+                if norm_title in seen_titles:
+                    continue
+                seen_ids.add(item_id)
+                seen_titles.add(norm_title)
+                save_seen_items(seen_ids, seen_titles)
                 price_data = item.get("price", {})
                 price = price_data.get("value", "N/A")
                 currency = price_data.get("currency", "")
