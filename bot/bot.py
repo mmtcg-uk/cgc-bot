@@ -60,6 +60,64 @@ def get_ebay_listings(token):
                 all_items.append(item)
     return all_items
 
+COUNTRY_FLAGS = {
+    "united states": "🇺🇸",
+    "united kingdom": "🇬🇧",
+    "japan": "🇯🇵",
+    "germany": "🇩🇪",
+    "france": "🇫🇷",
+    "canada": "🇨🇦",
+    "australia": "🇦🇺",
+    "italy": "🇮🇹",
+    "spain": "🇪🇸",
+    "netherlands": "🇳🇱",
+    "china": "🇨🇳",
+    "south korea": "🇰🇷",
+    "hong kong": "🇭🇰",
+    "singapore": "🇸🇬",
+    "taiwan": "🇹🇼",
+    "brazil": "🇧🇷",
+    "mexico": "🇲🇽",
+    "sweden": "🇸🇪",
+    "norway": "🇳🇴",
+    "denmark": "🇩🇰",
+    "finland": "🇫🇮",
+    "switzerland": "🇨🇭",
+    "austria": "🇦🇹",
+    "belgium": "🇧🇪",
+    "poland": "🇵🇱",
+    "portugal": "🇵🇹",
+    "new zealand": "🇳🇿",
+    "ireland": "🇮🇪",
+    "israel": "🇮🇱",
+    "india": "🇮🇳",
+    "russia": "🇷🇺",
+    "ukraine": "🇺🇦",
+    "greece": "🇬🇷",
+    "czech republic": "🇨🇿",
+    "hungary": "🇭🇺",
+    "romania": "🇷🇴",
+    "thailand": "🇹🇭",
+    "malaysia": "🇲🇾",
+    "indonesia": "🇮🇩",
+    "philippines": "🇵🇭",
+    "south africa": "🇿🇦",
+    "argentina": "🇦🇷",
+    "chile": "🇨🇱",
+    "colombia": "🇨🇴",
+}
+
+def get_country_flag(location: str) -> str:
+    """Return a flag emoji for the given location string, or 🌍 if unknown."""
+    if not location:
+        return "🌍"
+    normalised = location.lower().strip()
+    # Try longest match first so "United Kingdom" beats "United"
+    for country, flag in sorted(COUNTRY_FLAGS.items(), key=lambda x: len(x[0]), reverse=True):
+        if country in normalised:
+            return flag
+    return "🌍"
+
 def is_target_item(item):
     title = item.get("title", "").lower()
     return "cgc 9.5" in title or "cgc blue label" in title
@@ -86,7 +144,24 @@ async def check_ebay():
                 price = price_data.get("value", "N/A")
                 currency = price_data.get("currency", "")
                 url = item.get("itemWebUrl", "")
-                await channel.send(f"{title}\n{price} {currency}\n{url}")
+                location_data = item.get("itemLocation", {})
+                location = location_data.get("country", "") or location_data.get("postalCode", "")
+                location_name = (
+                    location_data.get("city", "")
+                    or location_data.get("stateOrProvince", "")
+                    or location_data.get("country", "")
+                    or "Unknown"
+                )
+                flag = get_country_flag(location_data.get("country", ""))
+                embed = discord.Embed(
+                    title=title,
+                    url=url,
+                    color=0x0064D2,  # eBay blue
+                )
+                embed.add_field(name="💰 Price", value=f"{price} {currency}", inline=True)
+                embed.add_field(name="📍 Location", value=f"{flag} {location_name}", inline=True)
+                embed.set_footer(text="eBay • CGC Listings")
+                await channel.send(embed=embed)
         except Exception as e:
             print("Error:", e)
         await asyncio.sleep(300)
