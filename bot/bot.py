@@ -153,6 +153,11 @@ async def check_ebay():
                     or "Unknown"
                 )
                 flag = get_country_flag(location_data.get("country", ""))
+                image_url = (
+                    (item.get("image") or {}).get("imageUrl")
+                    or (item.get("thumbnailImages") or [{}])[0].get("imageUrl")
+                    or ""
+                )
                 embed = discord.Embed(
                     title=title,
                     url=url,
@@ -161,6 +166,8 @@ async def check_ebay():
                 embed.add_field(name="💰 Price", value=f"{price} {currency}", inline=True)
                 embed.add_field(name="📍 Location", value=f"{flag} {location_name}", inline=True)
                 embed.set_footer(text="eBay • CGC Listings")
+                if image_url:
+                    embed.set_image(url=image_url)
                 await channel.send(embed=embed)
         except Exception as e:
             print("Error:", e)
